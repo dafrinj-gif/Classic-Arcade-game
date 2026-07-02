@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classic Arcade · 3 difficulties</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: linear-gradient(145deg, #0b0e1a, #1a1f2f);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .arcade-cabinet {
+            background: #222b3b;
+            padding: 2rem 2rem 1.8rem;
+            border-radius: 4rem 4rem 2rem 2rem;
+            box-shadow: 0 20px 30px rgba(0,0,0,0.7), inset 0 2px 4px rgba(255,255,255,0.08);
+            border-bottom: 8px solid #3d4a5e;
+        }
+        .game-container {
+            background: #0f1420;
+            padding: 1.5rem 1.5rem 1.2rem;
+            border-radius: 2.5rem;
+            box-shadow: inset 0 -6px 0 #2c364a, inset 0 6px 10px rgba(0,0,0,0.6);
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            width: 720px;
+            height: 480px;
+            border-radius: 28px;
+            background: #111827;
+            box-shadow: 0 0 0 3px #3f4b60, 0 12px 28px rgba(0,0,0,0.8);
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+            cursor: pointer;
+        }
+        .panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1.2rem;
+            padding: 0 0.5rem;
+            color: #c8d6e5;
+            text-shadow: 0 2px 0 #0a0e16;
+            font-weight: bold;
+            font-size: 1.4rem;
+            letter-spacing: 1px;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .score-box {
+            background: #1e2638;
+            padding: 0.4rem 1.2rem;
+            border-radius: 60px;
+            border-bottom: 4px solid #3d4b62;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.6);
+            color: #facc15;
+            font-size: 1.8rem;
+            font-weight: 700;
+            min-width: 120px;
+            text-align: center;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+            background: #1a2233;
+            padding: 0.3rem 0.6rem;
+            border-radius: 60px;
+            border-bottom: 3px solid #2a3448;
+        }
+        .btn {
+            background: #2f3b4e;
+            border: none;
+            border-bottom: 5px solid #171f2b;
+            color: #ecf3fa;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 1.1rem;
+            padding: 0.3rem 1.2rem;
+            border-radius: 60px;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #0b1018, 0 6px 10px rgba(0,0,0,0.4);
+            transition: all 0.04s linear;
+            letter-spacing: 0.5px;
+            min-width: 60px;
+        }
+        .btn:active {
+            transform: translateY(4px);
+            border-bottom-width: 2px;
+        }
+        .btn.reset {
+            background: #4a3a4e;
+            color: #fadfad;
+        }
+        .btn.reset:active {
+            background: #3d2e40;
+        }
+        .btn.diff {
+            background: #2d3f4e;
+            border-bottom-color: #1d2a36;
+        }
+        .btn.diff.active {
+            background: #facc15;
+            color: #0f1420;
+            border-bottom-color: #b8960a;
+            box-shadow: 0 0 16px #facc1580;
+        }
+        .hint {
+            color: #7e8ba0;
+            font-size: 0.95rem;
+            padding-right: 0.5rem;
+        }
+        @media (max-width: 780px) {
+            .arcade-cabinet { padding: 1rem; border-radius: 2rem; }
+            canvas { width: 100%; height: auto; aspect-ratio: 720/480; }
+            .panel { flex-direction: column; align-items: stretch; }
+            .controls { justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+<div class="arcade-cabinet">
+    <div class="game-container">
+        <canvas id="gameCanvas" width="720" height="480"></canvas>
+        <div class="panel">
+            <div class="score-box" id="scoreDisplay">0000</div>
+            <div class="controls">
+                <span class="hint">← → / A D</span>
+                <div class="btn-group" id="difficultyGroup">
+                    <button class="btn diff" data-diff="easy">EASY</button>
+                    <button class="btn diff active" data-diff="medium">MEDIUM</button>
+                    <button class="btn diff" data-diff="hard">HARD</button>
+                </div>
+                <button class="btn reset" id="resetButton">↺ RESTART</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    (function classicArcade() {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreSpan = document.getElementById('scoreDisplay');
+
+        // ----- dimensions -----
+        const W = 720, H = 480;
+        const PADDLE_WIDTH = 90;
+        const PADDLE_HEIGHT = 16;
+        const PADDLE_Y = H - 40;
+        const BALL_RADIUS = 10;
+        const MAX_LIVES = 3;
+
+        // ----- difficulty settings -----
+        const DIFFICULTY = {
+            easy: {
+                spawnInterval: 40,        // frames between spawns
+                minSpeed: 1.8,
+                maxSpeed: 3.8,
+                extraSpawnChance: 0.0,
+                extraSpawnThreshold: 999, // never
+                label: 'EASY'
+            },
+            medium: {
+                spawnInterval: 28,
+                minSpeed: 2.2,
+                maxSpeed: 4.8,
+                extraSpawnChance: 0.2,
+                extraSpawnThreshold: 25,
+                label: 'MEDIUM'
+            },
+            hard: {
+                spawnInterval: 18,
+                minSpeed: 3.0,
+                maxSpeed: 6.2,
+                extraSpawnChance: 0.4,
+                extraSpawnThreshold: 10,
+                label: 'HARD'
+            }
+        };
+
+        let currentDifficulty = 'medium';
+
+        // ----- game state -----
+        let paddle = { x: W/2 - PADDLE_WIDTH/2, y: PADDLE_Y, w: PADDLE_WIDTH, h: PADDLE_HEIGHT };
+        let balls = [];
+        let score = 0;
+        let lives = MAX_LIVES;
+        let gameOver = false;
+        let spawnTimer = 0;
+
+        // ----- keyboard -----
+        const keys = { left: false, right: false };
+        const MOVE_SPEED = 7;
+
+        function handleKeyDown(e) {
+            const key = e.key;
+            if (key === 'ArrowLeft' || key === 'a' || key === 'A') {
+                keys.left = true;
+                e.preventDefault();
+            } else if (key === 'ArrowRight' || key === 'd' || key === 'D') {
+                keys.right = true;
+                e.preventDefault();
+            } else if (key === 'r' || key === 'R') {
+                resetGame();
+                e.preventDefault();
+            }
+        }
+
+        function handleKeyUp(e) {
+            const key = e.key;
+            if (key === 'ArrowLeft' || key === 'a' || key === 'A') {
+                keys.left = false;
+                e.preventDefault();
+            } else if (key === 'ArrowRight' || key === 'd' || key === 'D') {
+                keys.right = false;
+                e.preventDefault();
+            }
+        }
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+
+        // ----- reset game (keep difficulty) -----
+        function resetGame() {
+            score = 0;
+            lives = MAX_LIVES;
+            gameOver = false;
+            balls = [];
+            paddle.x = W/2 - PADDLE_WIDTH/2;
+            spawnTimer = 0;
+            updateScoreDisplay();
+        }
+
+        // ----- spawn ball using current difficulty -----
+        function spawnBall() {
+            if (gameOver) return;
+            const diff = DIFFICULTY[currentDifficulty];
+            const x = 20 + Math.random() * (W - 40);
+            const speed = diff.minSpeed + Math.random() * (diff.maxSpeed - diff.minSpeed);
+            balls.push({
+                x: x,
+                y: -BALL_RADIUS - 2,
+                r: BALL_RADIUS,
+                speed: Math.min(speed, 6.5)
+            });
+        }
+
+        // ----- update score display -----
+        function updateScoreDisplay() {
+            let str = String(score);
+            while (str.length < 4) str = '0' + str;
+            scoreSpan.textContent = str;
+        }
+
+        // ----- update game logic -----
+        function update() {
+            if (gameOver) return;
+
+            // move paddle
+            if (keys.left && paddle.x > 0) {
+                paddle.x = Math.max(0, paddle.x - MOVE_SPEED);
+            }
+            if (keys.right && paddle.x + paddle.w < W) {
+                paddle.x = Math.min(W - paddle.w, paddle.x + MOVE_SPEED);
+            }
+
+            // spawn logic
+            const diff = DIFFICULTY[currentDifficulty];
+            spawnTimer++;
+            if (spawnTimer >= diff.spawnInterval) {
+                spawnTimer = 0;
+                spawnBall();
+                // extra spawns based on difficulty
+                if (score > diff.extraSpawnThreshold && Math.random() < diff.extraSpawnChance) {
+                    spawnBall();
+                }
+                // hard mode: sometimes double
+                if (currentDifficulty === 'hard' && score > 15 && Math.random() < 0.2) {
+                    spawnBall();
+                }
+            }
+
+            // update balls & collisions
+            const toRemove = [];
+            for (let i = 0; i < balls.length; i++) {
+                const b = balls[i];
+                b.y += b.speed;
+
+                // out of screen -> lose life
+                if (b.y - b.r > H) {
+                    toRemove.push(i);
+                    lives--;
+                    if (lives <= 0) {
+                        gameOver = true;
+                        lives = 0;
+                    }
+                    continue;
+                }
+
+                // paddle collision
+                const bx = b.x, by = b.y, br = b.r;
+                const px = paddle.x, py = paddle.y, pw = paddle.w, ph = paddle.h;
+                const closestX = Math.max(px, Math.min(bx, px + pw));
+                const closestY = Math.max(py, Math.min(by, py + ph));
+                const dx = bx - closestX;
+                const dy = by - closestY;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                if (dist < br) {
+                    toRemove.push(i);
+                    score++;
+                    updateScoreDisplay();
+                }
+            }
+
+            // remove balls (reverse order)
+            toRemove.sort((a,b) => b - a);
+            for (let idx of toRemove) {
+                balls.splice(idx, 1);
+            }
+
+            if (lives <= 0) {
+                gameOver = true;
+                lives = 0;
+            }
+            updateScoreDisplay();
+        }
+
+        // ----- drawing -----
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            // background grid
+            ctx.strokeStyle = '#1f2a3b';
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < W; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, H);
+                ctx.strokeStyle = '#1f2a3b';
+                ctx.stroke();
+            }
+            for (let i = 0; i < H; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(W, i);
+                ctx.strokeStyle = '#1f2a3b';
+                ctx.stroke();
+            }
+
+            // paddle
+            ctx.shadowColor = '#5f9eff';
+            ctx.shadowBlur = 18;
+            ctx.fillStyle = '#7ec8ff';
+            ctx.beginPath();
+            ctx.roundRect(paddle.x, paddle.y, paddle.w, paddle.h, 10);
+            ctx.fill();
+            ctx.shadowBlur = 8;
+            ctx.fillStyle = '#c0e2ff';
+            ctx.beginPath();
+            ctx.roundRect(paddle.x+4, paddle.y-2, paddle.w-8, 6, 6);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#aad0ff';
+            ctx.beginPath();
+            ctx.roundRect(paddle.x+6, paddle.y+4, paddle.w-12, 4, 4);
+            ctx.fill();
+
+            // balls
+            for (let b of balls) {
+                const gradient = ctx.createRadialGradient(
+                    b.x-4, b.y-4, 2,
+                    b.x, b.y, b.r+4
+                );
+                gradient.addColorStop(0, '#ffb347');
+                gradient.addColorStop(0.6, '#ff7b2b');
+                gradient.addColorStop(1, '#c04000');
+                ctx.shadowColor = '#ff8c42';
+                ctx.shadowBlur = 24;
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                ctx.arc(b.x-2, b.y-3, b.r*0.3, 0, Math.PI*2);
+                ctx.fillStyle = '#fff5cf';
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+
+            // lives
+            ctx.font = 'bold 24px "Courier New", monospace';
+            ctx.fillStyle = '#f87171';
+            ctx.shadowColor = '#ff4d4d';
+            ctx.shadowBlur = 12;
+            let heartStr = '';
+            for (let i=0; i<lives; i++) heartStr += '♥ ';
+            if (gameOver && lives === 0) heartStr = '💀';
+            ctx.fillText(heartStr || '♥ ♥ ♥', 18, 52);
+            ctx.shadowBlur = 0;
+
+            // difficulty label (top right)
+            ctx.font = 'bold 16px "Courier New", monospace';
+            ctx.fillStyle = '#7e8ba0';
+            ctx.textAlign = 'right';
+            ctx.fillText('[' + DIFFICULTY[currentDifficulty].label + ']', W-18, 34);
+            ctx.textAlign = 'left';
+
+            // game over
+            if (gameOver) {
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = '#ffbb33';
+                ctx.font = 'bold 56px "Courier New", monospace';
+                ctx.fillStyle = '#fde047';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', W/2, H/2 - 24);
+                ctx.font = '24px "Courier New", monospace';
+                ctx.fillStyle = '#d1dbe9';
+                ctx.fillText('press RESTART', W/2, H/2 + 48);
+                ctx.shadowBlur = 0;
+                ctx.textAlign = 'left';
+            }
+
+            // extra score on canvas
+            ctx.font = 'bold 18px "Courier New", monospace';
+            ctx.fillStyle = '#a0b8d0';
+            ctx.fillText('SCORE', W-120, 40);
+            ctx.font = 'bold 28px "Courier New", monospace';
+            ctx.fillStyle = '#facc15';
+            ctx.textAlign = 'right';
+            ctx.fillText(String(score).padStart(4, '0'), W-20, 72);
+            ctx.textAlign = 'left';
+        }
+
+        // helper roundRect
+        CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+            if (w < 2 * r) r = w / 2;
+            if (h < 2 * r) r = h / 2;
+            this.moveTo(x + r, y);
+            this.lineTo(x + w - r, y);
+            this.quadraticCurveTo(x + w, y, x + w, y + r);
+            this.lineTo(x + w, y + h - r);
+            this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            this.lineTo(x + r, y + h);
+            this.quadraticCurveTo(x, y + h, x, y + h - r);
+            this.lineTo(x, y + r);
+            this.quadraticCurveTo(x, y, x + r, y);
+            this.closePath();
+            return this;
+        };
+
+        // ----- difficulty buttons -----
+        const diffButtons = document.querySelectorAll('.btn.diff');
+        diffButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                const diff = this.dataset.diff;
+                if (diff === currentDifficulty) return;
+                // update active class
+                diffButtons.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                // set difficulty
+                currentDifficulty = diff;
+                resetGame(); // fresh start with new difficulty
+            });
+        });
+
+        // ----- reset button -----
+        document.getElementById('resetButton').addEventListener('click', resetGame);
+
+        // ----- game loop -----
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ----- start -----
+        resetGame();
+        gameLoop();
+
+        // prevent context menu
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+    })();
+</script>
+</body>
+</html>
